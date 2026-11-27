@@ -1,9 +1,9 @@
 # Frontend
 
 Painel React + TypeScript + Vite para consultas e comparacoes do CAGED.
-Os dados atuais sao simulados, gerados de forma deterministica, e nao sao
-estatisticas oficiais. A demonstracao cobre os 12 meses de 2025, quatro
-municipios de Sao Paulo e cinco setores economicos.
+Os dados vem da API do backend (Novo CAGED, series com ajustes). O painel mostra
+quatro municipios de Sao Paulo e cinco setores economicos. A API precisa estar em
+execucao: veja o README da raiz. Endereco em `VITE_API_URL` (`.env.example`).
 
 ## Execucao
 
@@ -28,25 +28,27 @@ npm run dev --workspace @caged/frontend -- --port 5174
 - `src/main.tsx`: providers do TanStack Query e React Router.
 - `src/App.tsx`: rotas `/` e `/comparar`, filtros, indicadores, graficos e tabelas.
 - `src/App.module.css`: estilos responsivos e fontes locais.
-- `src/data/labor.ts`: contrato dos dados, consultas simuladas e agregacoes.
+- `src/data/api.ts`: cliente da API (`fetchLabor`); converte nomes em codigos e junta as respostas.
+- `src/data/api.test.ts`: testes do cliente com `fetch` simulado.
+- `src/data/labor.ts`: tipos, CSV e tendencia. `demoRecords` e `queryLabor` (dados
+  simulados) nao sao mais usados pelo painel.
 - `src/data/labor.test.ts`: testes de filtros, saldo, cancelamento e CSV.
 
 Os filtros de periodo, municipio e setor ficam na URL. A selecao dos municipios
 na comparacao, a pesquisa na tabela e o modo dos graficos ficam em memoria.
 A exportacao CSV respeita os filtros e a pesquisa da tabela, com codificacao
-UTF-8 e separador ponto e virgula. O backend nao e necessario para a demonstracao.
+UTF-8 e separador ponto e virgula.
 
-## Integracao Futura
+## Integracao com a API
 
-Substitua `queryLabor` pela chamada HTTP aos endpoints definidos com o backend,
-preservando cancelamento e validacao dos dados recebidos. Defina o contrato real
-a partir das planilhas antes de conectar as consultas. Nao remova o aviso de
-dados simulados ate que a origem oficial esteja efetivamente integrada.
+A planilha do CAGED nao cruza municipio com setor, entao o painel faz consultas
+separadas: municipios via `/api/compare` (ou `/api/movements` para um so) e setores
+via `/api/ranking?level=sector` (Brasil inteiro). Com um setor escolhido, indicadores
+e evolucao mensal passam a ser do setor no Brasil, e o painel avisa isso na tela.
+Municipios e setores sao mapeados de nome para codigo em `src/data/api.ts`.
 
-A interface nao deve ler as planilhas diretamente. Processamento e regras
-de negocio pertencem ao pacote Python `packages/analytics`, exposto pela API
-em `apps/backend`. Defina as origens permitidas no CORS do backend nessa etapa;
-nao ha CORS ou endpoints novos no backend neste incremento.
+A interface nao le as planilhas diretamente. Processamento e regras de negocio
+ficam em `packages/analytics`, expostas pela API em `apps/backend`.
 
 ## Publicacao
 

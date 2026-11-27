@@ -52,9 +52,27 @@ uv run uvicorn caged_api.main:app --reload --host 127.0.0.1 --port 8000
 - Documentacao: http://127.0.0.1:8000/docs
 - Verificacao de saude: http://127.0.0.1:8000/health
 
-A API inicial disponibiliza somente a verificacao de saude. Os endpoints de
-pesquisa e comparacao serao implementados apos definir o esquema dos dados.
-Nao ha upload HTTP, banco de dados ou autenticacao nesta estrutura inicial.
+A API le a planilha oficial "Tabelas" do Novo CAGED (MTE). Coloque o arquivo em
+`data/raw/` (o nome precisa conter `tabelas` e terminar em `.xlsx`) ou aponte para ele
+com a variavel `CAGED_XLSX`. A planilha e lida uma unica vez, ao iniciar (cerca de
+15 segundos). Sem a planilha, as rotas respondem 503.
+
+| Rota (todas GET) | O que devolve |
+|---|---|
+| `/api/meta` | periodo disponivel, tipo de serie (com ajustes) e fonte |
+| `/api/states` | UFs com sigla, nome e regiao |
+| `/api/cities?state&q&limit` | municipios (codigo IBGE) |
+| `/api/sectors` | os 5 grupamentos de setor |
+| `/api/movements?start&end` + no maximo um entre `city`, `state`, `sector` | serie mensal e totais (sem filtro = Brasil) |
+| `/api/ranking?start&end&level&metric&state&limit` | ranking por regiao, UF, municipio ou setor |
+| `/api/compare?start&end&cities=310620,355030` | 2 a 5 municipios lado a lado |
+
+Meses usam `YYYY-MM`. Parametro invalido responde 422 (mesmo formato do FastAPI) e
+consulta sem dados responde 200 com lista vazia. A planilha **nao cruza municipio com
+setor**, por isso as rotas aceitam um unico filtro por vez. O CORS libera
+`http://localhost:5173` e `http://127.0.0.1:5173` (outras origens: `CAGED_CORS_ORIGINS`,
+separadas por virgula). Com `CAGED_USE_FAKE=1` a API usa dados falsos, sem a planilha.
+Nao ha upload HTTP, banco de dados ou autenticacao.
 
 ## Pacote de Dados
 
@@ -92,9 +110,10 @@ npm run dev
 
 Acesse http://127.0.0.1:5173 (ou a porta informada pelo Vite, se estiver ocupada).
 O painel tem filtros de periodo, municipio e setor, graficos, comparacao entre
-municipios, pesquisa na tabela e exportacao CSV. Todos os valores sao ficticios,
-restritos a 2025, e nao representam estatisticas oficiais do CAGED.
-O backend nao precisa estar em execucao para esta demonstracao.
+municipios, pesquisa na tabela e exportacao CSV. Os valores vem da API (dados oficiais
+do Novo CAGED), entao **o backend precisa estar em execucao** (por padrao em
+http://127.0.0.1:8000). Se a API usar outra porta, copie `apps/frontend/.env.example` para
+`apps/frontend/.env.local` e ajuste `VITE_API_URL`.
 
 Detalhes em [apps/frontend/README.md](apps/frontend/README.md). As dependencias
 JavaScript sao gerenciadas pelo workspace npm da raiz e por `package-lock.json`.

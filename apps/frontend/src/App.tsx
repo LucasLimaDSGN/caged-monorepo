@@ -11,9 +11,10 @@ import {
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import {
-  cities, comparePeriodTrend, defaultFilters, queryLabor, sectors, summarize, toCsv, totals,
+  cities, comparePeriodTrend, defaultFilters, sectors, toCsv,
   type Filters, type Summary,
 } from './data/labor';
+import { fetchLabor, sumTotals } from './data/api';
 import styles from './App.module.css';
 
 const number = new Intl.NumberFormat('pt-BR');
@@ -54,16 +55,16 @@ function Dashboard({ comparison = false }: { comparison?: boolean }) {
   const validMonth = /^\d{4}-(0[1-9]|1[0-2])$/;
   const invalidPeriod = !validMonth.test(filters.start) || !validMonth.test(filters.end)
     || filters.start > filters.end;
-  const { data = [], isPending, isError, refetch } = useQuery({
-    queryKey: ['labor', filters],
-    queryFn: ({ signal }) => queryLabor(filters, signal),
+  const cityList = comparison ? selectedCities : filters.city === 'all' ? [...cities] : [filters.city];
+  const { data, isPending, isError, refetch } = useQuery({
+    queryKey: ['labor', filters.start, filters.end, filters.sector, cityList],
+    queryFn: ({ signal }) => fetchLabor(filters, cityList, signal),
     enabled: !invalidPeriod,
   });
-  const records = comparison ? data.filter((row) => selectedCities.includes(row.city)) : data;
-  const total = totals(records);
-  const monthly = summarize(records, 'month');
-  const byCity = summarize(records, 'city').sort((first, second) => second.balance - first.balance);
-  const bySector = summarize(records, 'sector').sort((first, second) => second.balance - first.balance);
+  const monthly = data?.monthly ?? [];
+  const total = sumTotals(monthly);
+  const byCity = [...(data?.byCity ?? [])].sort((first, second) => second.balance - first.balance);
+  const bySector = [...(data?.bySector ?? [])].sort((first, second) => second.balance - first.balance);
   const grouped = (comparison || dimension === 'city' ? byCity : bySector);
   const tableRows = grouped.filter((row) => row.name.toLocaleLowerCase('pt-BR')
     .includes(deferredSearch.toLocaleLowerCase('pt-BR')));
@@ -79,7 +80,7 @@ function Dashboard({ comparison = false }: { comparison?: boolean }) {
       return <span className={`${styles.trendChip} ${styles.trendUnavailable}`} title="Sem duas competencias comparaveis" aria-label="Sem duas competencias comparaveis">—</span>;
     }
 
-    const label = `${trend.direction === 'up' ? 'Aumento' : trend.direction === 'down' ? 'Queda' : 'Sem variacao'} de ${percentage.format(trend.percentage)} entre ${monthLabel(trend.start)}/${trend.start.slice(0, 4)} e ${monthLabel(trend.end)}/${trend.end.slice(0, 4)}; dados demonstrativos.`;
+    const label = `${trend.direction === 'up' ? 'Aumento' : trend.direction === 'down' ? 'Queda' : 'Sem variacao'} de ${percentage.format(trend.percentage)} entre ${monthLabel(trend.start)}/${trend.start.slice(0, 4)} e ${monthLabel(trend.end)}/${trend.end.slice(0, 4)}`;
     const TrendIcon = trend.direction === 'up' ? ArrowUpRight : trend.direction === 'down' ? ArrowDownRight : Minus;
     const tone = trend.direction === 'up' ? styles.trendUp : trend.direction === 'down' ? styles.trendDown : styles.trendFlat;
     return <span className={`${styles.trendChip} ${tone}`} title={label} aria-label={label}><TrendIcon size={12} aria-hidden="true" />{percentage.format(trend.percentage)}</span>;
@@ -136,10 +137,12 @@ function Dashboard({ comparison = false }: { comparison?: boolean }) {
           <div className={styles.dashboardHeader}>
             <div className={styles.heading}>
               <p className={styles.eyebrow}>EMPREGO FORMAL / SAO PAULO</p>
-              <div className={styles.titleRow}><h1>{comparison ? 'Compare os municipios' : 'Mercado de trabalho'}</h1>{!comparison && <span className={styles.infoWrap}><button className={styles.infoButton} aria-label="Informacoes sobre a base de dados" aria-describedby="data-info-tooltip"><Info size={16} /></button><span id="data-info-tooltip" role="tooltip" className={styles.infoTooltip}>Base demonstrativa 2025. Valores ficticios; nao representam estatisticas oficiais do CAGED.</span></span>}</div>
+              <div className={styles.titleRow}><h1>{comparison ? 'Compare os municipios' : 'Mercado de trabalho'}</h1>{!comparison && <span className={styles.infoWrap}><button className={styles.infoButton} aria-label="Informacoes sobre a base de dados" aria-describedby="data-info-tooltip"><Info size={16} /></button><span id="data-info-tooltip" role="tooltip" className={styles.infoTooltip}>Dados oficiais do Novo CAGED (MTE), series com ajustes.</span></span>}</div>
               <p className={styles.subtitle}>{comparison ? 'Diferentes localidades, um mesmo recorte.' : 'Um olhar sobre os movimentos do emprego formal.'}</p>
             </div>
           </div>
+
+          {data?.notice && <p role="note" className={styles.subtitle}>{data.notice}</p>}
 
           <div className={styles.filterAnalyticsRow}>
             <button className={styles.filterTrigger} type="button" aria-haspopup="dialog" aria-expanded={filterOpen} onClick={openFilters}>
@@ -173,7 +176,7 @@ function Dashboard({ comparison = false }: { comparison?: boolean }) {
           {invalidPeriod ? <div role="alert" className={styles.empty}>Informe um periodo valido, com a data inicial anterior ou igual a final.</div>
             : isError ? <div role="alert" className={styles.empty}>Nao foi possivel carregar os dados.<button onClick={() => void refetch()}>Tentar novamente</button></div>
             : isPending ? <div role="status" className={styles.empty}>Carregando indicadores...</div>
-            : !records.length ? <div className={styles.empty}><Database size={30} /><h2>Nenhum resultado neste recorte</h2><p>{comparison && !selectedCities.length ? 'Nenhum municipio selecionado.' : 'A base demonstrativa contem dados de janeiro a dezembro de 2025.'}</p><button onClick={() => { setParams({}); setSelectedCities(['Campinas', 'Sao Paulo']); }}>Restaurar consulta</button></div>
+            : !monthly.length ? <div className={styles.empty}><Database size={30} /><h2>Nenhum resultado neste recorte</h2><p>{comparison && !selectedCities.length ? 'Nenhum municipio selecionado.' : 'Nao ha dados para este recorte.'}</p><button onClick={() => { setParams({}); setSelectedCities(['Campinas', 'Sao Paulo']); }}>Restaurar consulta</button></div>
             : <>
               <div className={styles.dashboardGrid}>
                 <div className={styles.dashboardColumn}>
@@ -187,8 +190,8 @@ function Dashboard({ comparison = false }: { comparison?: boolean }) {
                   <section className={`${styles.tableSection} ${styles.panelCard}`} aria-labelledby="table-title">
                     <div className={styles.sectionHeading}><div><h2 id="table-title">{comparison ? 'Municipios lado a lado' : 'O recorte em detalhe'}<span className={styles.count}>{grouped.length}</span></h2><p>Valores acumulados / {period}</p></div>{!comparison && <div className={styles.segmented} aria-label="Agrupar tabela"><button aria-pressed={dimension === 'city'} onClick={() => setDimension('city')}>Municipios</button><button aria-pressed={dimension === 'sector'} onClick={() => setDimension('sector')}>Setores</button></div>}</div>
                     <div className={styles.tableToolbar}><label className={styles.search}><Search size={16} /><input aria-label="Pesquisar na tabela" placeholder={dimension === 'sector' && !comparison ? 'Buscar setor...' : 'Buscar municipio...'} value={search} onChange={(event) => setSearch(event.target.value)} />{search && <button title="Limpar pesquisa" aria-label="Limpar pesquisa" onClick={() => setSearch('')}><X size={14} /></button>}</label><span>Ordenado por saldo</span></div>
-                    <div className={styles.tableScroll}><table><caption className={styles.srOnly}>Dados demonstrativos agregados por {dimension === 'sector' && !comparison ? 'setor' : 'municipio'}</caption><thead><tr><th>{dimension === 'sector' && !comparison ? 'Atividade economica' : 'Municipio'}</th><th>Admissoes</th><th>Desligamentos</th><th>Saldo</th><th>Saldo / admissoes</th></tr></thead><tbody>{tableRows.map((row, index) => <tr key={row.name}><th scope="row"><span className={styles.rowIndex}>{String(index + 1).padStart(2, '0')}</span>{row.name}</th><td>{number.format(row.admissions)}</td><td>{number.format(row.dismissals)}</td><td><span className={row.balance >= 0 ? styles.positive : styles.negative}>{signed(row.balance)}</span></td><td><span className={styles.shareBar}><span style={{ width: `${Math.min(100, Math.abs(row.balance / row.admissions * 100))}%` }} /></span>{(row.balance / row.admissions * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%</td></tr>)}</tbody></table>{!tableRows.length && <p className={styles.noMatches}>Nenhum resultado para "{search}".</p>}</div>
-                    <div className={styles.tableFooter}>{tableRows.length} de {grouped.length} resultados<span>Base simulada / sem dados oficiais</span></div>
+                    <div className={styles.tableScroll}><table><caption className={styles.srOnly}>Dados agregados por {dimension === 'sector' && !comparison ? 'setor' : 'municipio'}</caption><thead><tr><th>{dimension === 'sector' && !comparison ? 'Atividade economica' : 'Municipio'}</th><th>Admissoes</th><th>Desligamentos</th><th>Saldo</th><th>Saldo / admissoes</th></tr></thead><tbody>{tableRows.map((row, index) => <tr key={row.name}><th scope="row"><span className={styles.rowIndex}>{String(index + 1).padStart(2, '0')}</span>{row.name}</th><td>{number.format(row.admissions)}</td><td>{number.format(row.dismissals)}</td><td><span className={row.balance >= 0 ? styles.positive : styles.negative}>{signed(row.balance)}</span></td><td><span className={styles.shareBar}><span style={{ width: `${Math.min(100, Math.abs(row.balance / row.admissions * 100))}%` }} /></span>{(row.balance / row.admissions * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%</td></tr>)}</tbody></table>{!tableRows.length && <p className={styles.noMatches}>Nenhum resultado para "{search}".</p>}</div>
+                    <div className={styles.tableFooter}>{tableRows.length} de {grouped.length} resultados<span>Fonte: Novo CAGED / MTE</span></div>
                   </section>
                 </div>
 
